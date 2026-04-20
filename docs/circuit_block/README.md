@@ -1,4 +1,4 @@
-## 🧩 2. 보유 회로 블록 현황 (Circuit Block Status)
+## 🧩 보유 회로 블록 현황 (Circuit Block Status)
 
 현재 모든 핵심 블록의 **Schematic 설계 및 Symbol 라이브러리 제작**이 완료된 상태입니다.
 
