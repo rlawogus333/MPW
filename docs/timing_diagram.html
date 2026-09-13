@@ -1,0 +1,380 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { margin: 0; padding: 0; background: transparent; font-family: var(--font-sans, sans-serif); }
+canvas { display: block; width: 100%; }
+.controls {
+  display: flex; gap: 12px; align-items: center;
+  padding: 8px 16px 4px; font-size: 12px; color: var(--color-text-secondary);
+  flex-wrap: wrap;
+}
+.ctrl-btn {
+  padding: 4px 12px; border-radius: 6px; border: 1px solid var(--color-border-secondary);
+  background: var(--color-background-secondary); color: var(--color-text-primary);
+  cursor: pointer; font-size: 12px;
+}
+.ctrl-btn:hover { background: var(--color-background-tertiary); }
+#zoom-label { min-width: 60px; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <span style="font-weight:500;color:var(--color-text-primary)">SRAM Timing Diagram</span>
+  <button class="ctrl-btn" onclick="zoom(1.5)">확대 ＋</button>
+  <button class="ctrl-btn" onclick="zoom(1/1.5)">축소 −</button>
+  <button class="ctrl-btn" onclick="resetView()">초기화</button>
+  <span id="zoom-label">1× zoom</span>
+  <span style="margin-left:auto">← 드래그로 스크롤 →</span>
+</div>
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ── layout constants ─────────────────────────────────────
+const LW = 110;   // left label area width
+const ROW_H = 72; // height per signal row
+const PAD_TOP = 36;
+const PAD_BOT = 40;
+const SIG_H = 32; // waveform draw height
+const SIG_PAD = (ROW_H - SIG_H) / 2;
+const SIGNALS = ['E (Enable)', 'PRE', 'WE', 'SE'];
+const COLORS = ['#1D9E75', '#D85A30', '#D4537E', '#378ADD'];
+
+// ── timing parameters (all in ns) ────────────────────────
+const SIM_END = 12600; // 12.6 μs shown
+
+function buildWaveform(signal) {
+  // returns array of {t, v} in ns; v in 0..1
+  const pts = [];
+  const TR = 1; // rise/fall time
+
+  if (signal === 'E') {
+    // vpwl: 0→0V at t=0, 0V at t=10n, 3.3V at t=11n, stays high
+    pts.push({t:0,     v:0});
+    pts.push({t:10,    v:0});
+    pts.push({t:10+TR, v:1});
+    pts.push({t:SIM_END, v:1});
+
+  } else if (signal === 'PRE') {
+    // vpulse: V1=3.3(high), V2=0(low) → starts HIGH, pulses LOW
+    // Period=2100n, Delay=100n, PW=500n
+    const period = 2100, delay = 100, pw = 500;
+    const V_idle = 1, V_pulse = 0;
+    pts.push({t:0, v:V_idle});
+    let t = delay;
+    while (t < SIM_END) {
+      pts.push({t: t,      v: V_idle});
+      pts.push({t: t+TR,   v: V_pulse});
+      pts.push({t: t+pw,   v: V_pulse});
+      pts.push({t: t+pw+TR,v: V_idle});
+      t += period;
+    }
+    pts.push({t:SIM_END, v:V_idle});
+
+  } else if (signal === 'WE') {
+    // vpulse: V1=0(low-idle), V2=3.3(high)
+    // Period=4200n, Delay=1000n, PW=500n
+    const period = 4200, delay = 1000, pw = 500;
+    pts.push({t:0, v:0});
+    let t = delay;
+    while (t < SIM_END) {
+      pts.push({t: t,      v:0});
+      pts.push({t: t+TR,   v:1});
+      pts.push({t: t+pw,   v:1});
+      pts.push({t: t+pw+TR,v:0});
+      t += period;
+    }
+    pts.push({t:SIM_END, v:0});
+
+  } else if (signal === 'SE') {
+    // vpulse: V1=0(low-idle), V2=3.3(high)
+    // Period=4200n, Delay=3100n, PW=500n
+    const period = 4200, delay = 3100, pw = 500;
+    pts.push({t:0, v:0});
+    let t = delay;
+    while (t < SIM_END) {
+      pts.push({t: t,      v:0});
+      pts.push({t: t+TR,   v:1});
+      pts.push({t: t+pw,   v:1});
+      pts.push({t: t+pw+TR,v:0});
+      t += period;
+    }
+    pts.push({t:SIM_END, v:0});
+  }
+  return pts;
+}
+
+const waves = {
+  'E (Enable)': buildWaveform('E'),
+  'PRE':        buildWaveform('PRE'),
+  'WE':         buildWaveform('WE'),
+  'SE':         buildWaveform('SE'),
+};
+
+// ── view state ───────────────────────────────────────────
+let zoomX = 1.0;
+let offsetX = 0;   // pan in ns
+let dragging = false, dragStart = 0, dragOffset0 = 0;
+
+function nsToX(t) {
+  const totalW = canvas.width - LW;
+  return LW + (t - offsetX) / (SIM_END / zoomX) * totalW;
+}
+function xToNs(x) {
+  const totalW = canvas.width - LW;
+  return offsetX + (x - LW) / totalW * (SIM_END / zoomX);
+}
+
+function clampOffset() {
+  const viewNs = SIM_END / zoomX;
+  offsetX = Math.max(0, Math.min(offsetX, SIM_END - viewNs));
+}
+
+function zoom(factor) {
+  const cx = canvas.width / 2;
+  const cNs = xToNs(cx);
+  zoomX = Math.max(1, Math.min(zoomX * factor, 20));
+  const viewNs = SIM_END / zoomX;
+  offsetX = cNs - viewNs / 2;
+  clampOffset();
+  draw();
+  document.getElementById('zoom-label').textContent = zoomX.toFixed(1) + '× zoom';
+}
+
+function resetView() {
+  zoomX = 1; offsetX = 0;
+  draw();
+  document.getElementById('zoom-label').textContent = '1× zoom';
+}
+
+// ── draw ─────────────────────────────────────────────────
+function draw() {
+  const W = canvas.width;
+  const H = canvas.height;
+  const dark = matchMedia('(prefers-color-scheme:dark)').matches;
+  const bg   = dark ? '#1e1e1e' : '#ffffff';
+  const fg   = dark ? '#c2c0b6' : '#3d3d3a';
+  const grid = dark ? '#2e2e2e' : '#e8e6e0';
+  const sep  = dark ? '#2a2a2a' : '#eeece6';
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── grid & time axis ──────────────────────────────────
+  const viewNs = SIM_END / zoomX;
+  // pick nice tick interval
+  const rawInterval = viewNs / 8;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawInterval)));
+  let tickInterval = mag;
+  if (rawInterval / mag > 5) tickInterval = mag * 5;
+  else if (rawInterval / mag > 2) tickInterval = mag * 2;
+
+  const firstTick = Math.ceil(offsetX / tickInterval) * tickInterval;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(LW, 0, W - LW, H);
+  ctx.clip();
+
+  for (let t = firstTick; t <= offsetX + viewNs + tickInterval; t += tickInterval) {
+    const x = Math.round(nsToX(t));
+    // grid line
+    ctx.strokeStyle = grid;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(x, PAD_TOP); ctx.lineTo(x, H - PAD_BOT); ctx.stroke();
+    // tick label
+    const label = t >= 1000 ? (t/1000).toFixed(t % 100 === 0 ? 0 : 2) + ' μs'
+                             : t.toFixed(0) + ' ns';
+    ctx.fillStyle = dark ? '#888' : '#999';
+    ctx.font = '10px ' + (dark ? 'monospace' : 'sans-serif');
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x, H - PAD_BOT + 14);
+  }
+  ctx.restore();
+
+  // ── rows ──────────────────────────────────────────────
+  SIGNALS.forEach((sig, i) => {
+    const rowY = PAD_TOP + i * ROW_H;
+
+    // row background (alternating subtle)
+    ctx.fillStyle = i % 2 === 0
+      ? (dark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)')
+      : 'transparent';
+    ctx.fillRect(0, rowY, W, ROW_H);
+
+    // label
+    ctx.fillStyle = COLORS[i];
+    ctx.font = '500 12px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(sig, LW - 10, rowY + ROW_H / 2 + 4);
+
+    // VH / VL labels
+    ctx.fillStyle = dark ? '#555' : '#bbb';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('3.3V', LW - 10, rowY + SIG_PAD + 6);
+    ctx.fillText('0V',   LW - 10, rowY + SIG_PAD + SIG_H + 2);
+
+    // clip waveform to plot area
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(LW, rowY, W - LW, ROW_H);
+    ctx.clip();
+
+    // draw waveform
+    const pts = waves[sig];
+    ctx.beginPath();
+    ctx.strokeStyle = COLORS[i];
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+
+    let first = true;
+    for (let p = 0; p < pts.length; p++) {
+      const {t, v} = pts[p];
+      const x = nsToX(t);
+      const y = rowY + SIG_PAD + (1 - v) * SIG_H;
+      if (first) { ctx.moveTo(x, y); first = false; }
+      else        { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+
+    // fill under HIGH regions (subtle)
+    ctx.beginPath();
+    for (let p = 0; p < pts.length; p++) {
+      const {t, v} = pts[p];
+      const x = nsToX(t);
+      const y = rowY + SIG_PAD + (1 - v) * SIG_H;
+      if (p === 0) ctx.moveTo(x, rowY + SIG_PAD + SIG_H);
+      ctx.lineTo(x, y);
+    }
+    // close back to bottom
+    const lastX = nsToX(pts[pts.length-1].t);
+    ctx.lineTo(lastX, rowY + SIG_PAD + SIG_H);
+    ctx.closePath();
+    ctx.fillStyle = COLORS[i] + '18';
+    ctx.fill();
+
+    ctx.restore();
+
+    // row separator
+    ctx.strokeStyle = sep;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, rowY + ROW_H);
+    ctx.lineTo(W, rowY + ROW_H);
+    ctx.stroke();
+  });
+
+  // ── annotate cycle regions ─────────────────────────────
+  // Mark one full PRE period (2.1 μs) on top
+  {
+    const x0 = nsToX(100);
+    const x1 = nsToX(2200);
+    if (x1 > LW && x0 < W) {
+      ctx.save();
+      ctx.strokeStyle = dark ? '#444' : '#ccc';
+      ctx.setLineDash([4,3]);
+      ctx.lineWidth = 0.7;
+      // left edge
+      ctx.beginPath(); ctx.moveTo(Math.max(x0,LW), PAD_TOP - 4); ctx.lineTo(Math.max(x0,LW), PAD_TOP + 4*ROW_H); ctx.stroke();
+      // right edge  
+      ctx.beginPath(); ctx.moveTo(Math.min(x1,W), PAD_TOP - 4); ctx.lineTo(Math.min(x1,W), PAD_TOP + 4*ROW_H); ctx.stroke();
+      ctx.setLineDash([]);
+      // brace label
+      const mx = (Math.max(x0,LW) + Math.min(x1,W)) / 2;
+      ctx.fillStyle = dark ? '#666' : '#aaa';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('T_PRE = 2.1 μs', mx, PAD_TOP - 6);
+      ctx.restore();
+    }
+  }
+
+  // ── one-cycle annotation: Write cycle ─────────────────
+  {
+    const wStart = 1000, wEnd = 1500;
+    const x0 = nsToX(wStart), x1 = nsToX(wEnd);
+    if (x1 > LW && x0 < W) {
+      const rowY = PAD_TOP + 2 * ROW_H; // WE row
+      ctx.save();
+      ctx.strokeStyle = COLORS[2] + 'aa';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(Math.max(x0,LW), rowY - 2); ctx.lineTo(Math.max(x0,LW), rowY + ROW_H + 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(Math.min(x1,W), rowY - 2); ctx.lineTo(Math.min(x1,W), rowY + ROW_H + 2); ctx.stroke();
+      ctx.setLineDash([]);
+      // double arrow
+      const mx = (Math.max(x0,LW) + Math.min(x1,W)) / 2;
+      ctx.strokeStyle = COLORS[2];
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(Math.max(x0,LW)+2, rowY+ROW_H/2); ctx.lineTo(Math.min(x1,W)-2, rowY+ROW_H/2); ctx.stroke();
+      ctx.fillStyle = COLORS[2];
+      ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('PW=500 ns', mx, rowY + ROW_H/2 - 4);
+      ctx.restore();
+    }
+  }
+
+  // ── left border ───────────────────────────────────────
+  ctx.strokeStyle = dark ? '#333' : '#ddd';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(LW, PAD_TOP);
+  ctx.lineTo(LW, PAD_TOP + SIGNALS.length * ROW_H);
+  ctx.stroke();
+
+  // ── bottom axis line ──────────────────────────────────
+  ctx.strokeStyle = dark ? '#333' : '#ccc';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(LW, PAD_TOP + SIGNALS.length * ROW_H);
+  ctx.lineTo(W,  PAD_TOP + SIGNALS.length * ROW_H);
+  ctx.stroke();
+}
+
+// ── resize ───────────────────────────────────────────────
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.parentElement.clientWidth || 680;
+  const cssH = PAD_TOP + SIGNALS.length * ROW_H + PAD_BOT;
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+  canvas.width  = cssW * dpr;
+  canvas.height = cssH * dpr;
+  ctx.scale(dpr, dpr);
+  draw();
+}
+
+// ── drag to pan ──────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragStart = e.clientX;
+  dragOffset0 = offsetX;
+});
+canvas.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - dragStart;
+  const totalW = canvas.width / (window.devicePixelRatio||1) - LW;
+  const dNs = -dx / totalW * (SIM_END / zoomX);
+  offsetX = dragOffset0 + dNs;
+  clampOffset();
+  draw();
+});
+window.addEventListener('mouseup', () => { dragging = false; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom(e.deltaY < 0 ? 1.15 : 1/1.15);
+}, {passive:false});
+
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change', draw);
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# Cadence / Virtuoso
+*.cdslck
+*.oa
+.oa*
+cds.lib
+libManager.log
+panic.log
+*.log
+si.env
+netlist/
+simulation/
+.simrc
+
+# PDK (배포 제한)
+NSPL_*/
+*.tar.gz
+
+# 대용량 압축본
+*.zip
+
+# 실측 로그
+sram_log_*.csv
+
+# OS / 편집기
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+__pycache__/
+*.pyc
+.venv/
