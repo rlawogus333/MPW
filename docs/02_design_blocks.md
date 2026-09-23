@@ -1,7 +1,8 @@
 # 02. 블록별 설계
 
-공정: **NSPL 0.5 μm Analog CMOS 2P3M** · 동작 전압 **VDD = 3.3 V**
+공정: **NSPL 0.5 μm Analog CMOS 2P3M** · 시뮬레이션 VDD = 3.3 V · 실측 VDD = 5 V
 모든 소자는 최소 채널 길이 `L = 0.5 μm`를 사용했습니다.
+아래 W/L 값은 최종 GDS에서 직접 추출해 확인한 값입니다 ([03 §6.2](03_verification.md#62-트랜지스터-wl)).
 
 각 블록은 `*_schematic.png`(회로), `*_layout_box.png`(추상 뷰 / 블록 경계),
 `*_layout_instance.png`(인스턴스 전개 뷰) 세 가지로 정리했습니다.
@@ -18,20 +19,23 @@
 
 | 소자 | 역할 | W / L |
 |------|------|-------|
-| M2, M3 (pmos4) | Pull-up | 0.8 μm / 0.5 μm |
-| M0, M1 (nmos4) | Pull-down (driver) | 1.6 μm / 0.5 μm |
-| M4, M5 (nmos4) | Access (게이트 = WL) | 1.2 μm / 0.5 μm |
+| M2, M3 (pmos4) | Pull-up | 1.6 μm / 0.5 μm |
+| M0, M1 (nmos4) | Pull-down (driver) | 3.2 μm / 0.5 μm |
+| M4, M5 (nmos4) | Access (게이트 = WL) | 1.6 μm / 0.5 μm |
 
 **사이징 근거**
 
-- **Cell ratio β = W(pull-down) / W(access) = 1.6 / 1.2 ≈ 1.33**
+- **Cell ratio β = W(pull-down) / W(access) = 3.2 / 1.6 = 2.0**
   Read 시 access 트랜지스터를 통해 BL이 방전되는 동안, 저장 노드 '0'이 들뜨는 전압
   (read disturb)을 억제하려면 pull-down이 access보다 강해야 합니다.
-- **PR ratio = W(pull-up) / W(access) = 0.8 / 1.2 ≈ 0.67**
-  Write 시 Write Driver가 BLB를 LOW로 끌어 저장 노드 '1'을 뒤집어야 하므로,
-  pull-up PMOS는 access NMOS보다 약해야 합니다.
+- **PR ratio = W(pull-up) / W(access) = 1.6 / 1.6 = 1.0**
+  Write 시 Write Driver가 BL을 LOW로 끌어 저장 노드 '1'을 뒤집어야 하므로,
+  pull-up PMOS가 access NMOS보다 강하면 안 됩니다. PMOS는 같은 W에서 NMOS보다 이동도가 낮아
+  PR = 1이면 실제 구동력은 access 쪽이 더 큽니다.
 - 두 조건은 서로 반대 방향으로 작용합니다 — read stability를 키우면 writability가 나빠집니다.
-  β ≈ 1.33 / PR ≈ 0.67은 그 사이에서 양쪽 마진을 모두 확보한 값입니다.
+  β = 2 / PR = 1은 교과서적인 설계 범위 안에서 양쪽 마진을 확보한 값이며, 실리콘에서 write/read 모두 동작했습니다.
+
+> 이전 버전 문서의 PU 0.8 / PD 1.6 / ACC 1.2 μm(β ≈ 1.33)는 최종 GDS와 달라 정정했습니다.
 
 **Butterfly curve (SNM)**
 
@@ -63,11 +67,11 @@ NMOS + PMOS 병렬 구조. Column Decoder의 기본 단위 셀로 쓰입니다.
 |---|---|
 | <img src="../images/03_row_decoder/RowDecoder_layout_box.png" width="320"> | <img src="../images/03_row_decoder/RowDecoder_layout_instance.png" width="320"> |
 
-**NAND4 + INV × 8** 구조입니다. 각 NAND4는 `A3, A2, A1`의 참/보수 조합 3개와
+**NAND4 + INV × 8** 구조입니다. 각 NAND4는 행 주소 3비트(칩 핀 기준 `A2, A1, A0`)의 참/보수 조합 3개와
 **`E`를 네 번째 입력**으로 받습니다.
 
 ```
-WL[n] = E · decode(A3 A2 A1)
+WL[n] = E · decode(A2 A1 A0)      ※ A0는 Column Decoder와 공유
 ```
 
 즉 `E`는 단순한 enable이 아니라 **워드라인 펄스 그 자체**입니다.
@@ -81,7 +85,7 @@ WL[n] = E · decode(A3 A2 A1)
 |---|---|
 | <img src="../images/03_row_decoder/tb_RowDecoder_schematic.png" width="320"> | <img src="../images/03_row_decoder/tb_RowDecoder_simulation.png" width="320"> |
 
-A[3:1]을 000 → 111로 스윕하며 WL[0]~WL[7]이 하나씩만 어서트되는지, 그리고
+행 주소를 000 → 111로 스윕하며 WL[0]~WL[7]이 하나씩만 어서트되는지, 그리고
 `E = 0`일 때 모든 WL이 LOW인지 확인했습니다.
 
 ---
@@ -160,8 +164,9 @@ SE = 1  →  tail 전류 흐름  →  BL > BLB 이면 M3 쪽이 더 많이 도�
 RDATA = (BL > BLB)   (비반전)
 ```
 
-**주의 — 래치가 없습니다.** `SE = 0`이면 tail이 끊기고 출력 노드가 VDD로 떠서
-인버터를 통과한 `RDATA`는 **0**이 됩니다. 이 0은 "저장값 0"이 아니라 "무효"입니다.
+**주의 — 래치가 없습니다.** `SE = 0`이면 tail이 끊겨 출력은 더 이상 BL/BLB를 반영하지 않습니다.
+시뮬레이션에서는 이때 `RDATA`가 곧바로 **0**이 되었고, 실리콘에서는 SE 하강 후 다음 PRE까지 약 1 ms
+직전 값이 남아 있었습니다([06 §4.2](06_silicon_measurement.md#42-se-하강-후에도-rdata가-유지됨)). 어느 쪽이든 SE 밖의 값은 "무효"입니다.
 따라서 실측 샘플링은 반드시 `SE = 1` 구간 안에서 이루어져야 하며,
 테스터는 기본적으로 한 번의 read마다 3회 샘플해 값이 흔들리면 `~`(불안정)로 따로 표시합니다.
 
@@ -173,7 +178,7 @@ RDATA = (BL > BLB)   (비반전)
 |---|---|---|
 | <img src="../images/07_write_driver/WriteDriver_schematic.png" width="260"> | <img src="../images/07_write_driver/WriteDriver_layout_box.png" width="260"> | <img src="../images/07_write_driver/WriteDriver_layout_instance.png" width="260"> |
 
-인버터 체인 + `WE` 게이트 NMOS 2개(각 3.2 μm / 0.5 μm) 구조입니다.
+인버터 체인 + `WE` 게이트 NMOS 2개(각 1.6 μm / 0.5 μm) 구조입니다.
 
 ```
 WDATA ──┬── inv(I6) ── inv(I5) ──[NMOS, gate=WE]── BL    →  BL  =  WDATA
@@ -184,7 +189,7 @@ WDATA ──┬── inv(I6) ── inv(I5) ──[NMOS, gate=WE]── BL    �
 즉 `WDATA = 1` → `BL = HIGH, BLB = LOW`이고, Spectre testbench에서
 `WDATA = 5` → `RDATA = 5`로 입출력이 그대로 일치함을 확인했습니다.
 
-구동 인버터는 P 6.4 μm / N 2.2 μm로 크게 잡아, 프리차지로 VDD까지 올라간 비트라인을
+첫 단 인버터(I6)는 P 3.0 / N 1.6 μm이고, pass NMOS를 직접 구동하는 인버터 2개(I4 · I5)는 P 6.4 μm / N 2.2 μm로 크게 잡아, 프리차지로 VDD까지 올라간 비트라인을
 셀 latch가 뒤집힐 만큼 빠르게 끌어내릴 수 있도록 했습니다.
 
 ---

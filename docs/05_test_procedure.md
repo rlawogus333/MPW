@@ -1,5 +1,12 @@
 # 05. 테스트 실행 절차 · FAIL 진단
 
+> ⚠️ **이 문서는 `test/sram_rw_test.py` 전체 스위트(4-bit 주소 원안) 기준입니다.**
+> 제작된 칩은 주소 핀이 `A[2:0]`이고 A0가 행·열 디코더에 공유되어 선택 가능한 워드가 8개입니다
+> ([01 §2.1](01_architecture.md#21-제작된-칩-a20-a0-공유)). 불량 맵에서 짝수 WL의 Col 4–7, 홀수 WL의 Col 0–3은
+> 원래 접근할 수 없는 셀이므로 FAIL로 판정하지 않도록 스크립트를 먼저 고쳐야 합니다.
+> 2026-09 실측은 [`test/sram_ctrl_timing.py`](../test/sram_ctrl_timing.py) + 오실로스코프로 진행했고,
+> 결과는 [06_silicon_measurement.md](06_silicon_measurement.md)에 있습니다.
+
 ## 1. 설치
 
 라즈베리파이 OS Bookworm 기준:
@@ -138,9 +145,10 @@ BL3 배선 / Precharger3 / TG3를 가리킵니다.
 
 ## 6. 실측 후 정리할 항목
 
+- [x] 파형 캡처 — 주소 4개 write → read ([06](06_silicon_measurement.md))
 - [ ] 동작 전압 범위 — VDD를 스윕하며 전체 스위트 통과 하한/상한
 - [ ] 최소 동작 타이밍 — `shmoo`로 찾은 배율 한계
 - [ ] Read access time — 오실로스코프로 `SE` 상승 → `RDATA` 확정까지
 - [ ] 불량 셀 맵과 수율
 - [ ] Simulation vs Silicon 비교표
-- [ ] 파형 캡처 · 칩 현미경 사진
+- [ ] 칩 현미경 사진
