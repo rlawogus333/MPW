@@ -50,7 +50,6 @@ MPW로 제작된 실물 칩을 **라즈베리파이 GPIO 직결**로 Read/Write 
 │   ├── 04_raspberry_pi_test.md # 실측 배선 · 핀맵 · 타이밍 · 안전 규칙
 │   ├── 05_test_procedure.md    # 테스트 실행 절차 · FAIL 진단
 │   ├── 06_silicon_measurement.md # ★ 실리콘 실측 결과 (스코프 파형 · 결과 표)
-│   └── timing_diagram.html     # 인터랙티브 Write/Read 타이밍 다이어그램
 ├── images/                     # 설계 캡처 (블록별 분류)
 │   ├── 01_sram_cell/ … 07_write_driver/
 │   ├── 08_top_sram64/          # SRAM 매크로 top
