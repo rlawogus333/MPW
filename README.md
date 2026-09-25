@@ -162,7 +162,7 @@ WL = A2 A1 A0,  Col 그룹 = A0   →  짝수 WL ↔ Col 0–3,  홀수 WL ↔ C
 | **실리콘** | Raspberry Pi + 오실로스코프 | **주소 4개 · 71 사이클 write → read 불일치 0** ([상세](docs/06_silicon_measurement.md)) |
 
 <p align="center">
-  <img src="images/12_measurement/scope_addr000_bit3.png" width="620" alt="A[2:0]=000 WDATA3/RDATA3 실측 파형"><br>
+  <img src="images/12_measurement/scope_addr010_bit3.png" width="620" alt="A[2:0]=000 WDATA3/RDATA3 실측 파형"><br>
   <sub>A[2:0] = 000 · WE(분홍) · SE(하늘) · WDATA[3] (노랑) · RDATA[3] (파랑) — SE마다 직전 WE 하강 시점의 WDATA가 읽힘 (10 ms/div)</sub>
 </p>
 
