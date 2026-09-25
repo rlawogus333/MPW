@@ -21,7 +21,7 @@ MPW로 제작된 실물 칩을 **라즈베리파이 GPIO 직결**로 Read/Write 
 |------|------|
 | 용량 | 64-bit = 8 word-line × 8 column · 칩 외부에서 선택 가능한 워드 8개(4-bit) |
 | 셀 구조 | 6T CMOS SRAM cell |
-| 공정 | **NSPL 0.5 μm Analog CMOS 2-Poly 3-Metal** (ETRI / 모아팹 PDK) |
+| 공정 | **NSPL 0.5 μm Analog CMOS 2-Poly 3-Metal** (모아팹 PDK) |
 | 동작 전압 | 시뮬레이션 VDD = 3.3 V · **실측 VDD = 5 V (USB)** |
 | 설계 툴 | Cadence Virtuoso (schematic · layout), Spectre (시뮬레이션), Assura (DRC/LVS) |
 | 주변 회로 | 3-to-8 Row Decoder, Transmission-Gate Column Decoder, Precharger, Current-Mirror Sense Amp, Write Driver |
